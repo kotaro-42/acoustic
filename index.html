@@ -1,11 +1,133 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>My Website</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RASM Web Player</title>
+
+  <!-- RNBO Web Engine -->
+  <script src="https://cdn.cycling74.com/rnbo/rnbo.min.js"></script>
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 20px;
+    }
+    h1 { margin-bottom: 10px; }
+    .param {
+      margin: 12px 0;
+    }
+    input[type="range"] {
+      width: 280px;
+    }
+  </style>
 </head>
 <body>
-  <h1>ようこ、消えて！</h1>
-  <p>このページは GitHub Pages で公開されています。</p>
+
+  <h1>RASM Web Demo</h1>
+
+  <button id="startButton">Start Audio</button>
+  <p id="status">Loading…</p>
+
+  <h2>Parameters</h2>
+
+  <div class="param">
+    <label>Volume:
+      <input id="volume" type="range" min="0" max="1" step="0.01">
+    </label>
+    <span id="volumeVal"></span>
+  </div>
+
+  <div class="param">
+    <label>Sensitivity (20–80):
+      <input id="sensitivity" type="range" min="20" max="80" step="1">
+    </label>
+    <span id="sensitivityVal"></span>
+  </div>
+
+  <div class="param">
+    <label>Responsiveness (0–10):
+      <input id="responsiveness" type="range" min="0" max="10" step="1">
+    </label>
+    <span id="responsivenessVal"></span>
+  </div>
+
+  <div class="param">
+    <label>Dynamics (0–4):
+      <input id="dynamics" type="range" min="0" max="4" step="1">
+    </label>
+    <span id="dynamicsVal"></span>
+  </div>
+
+  <div class="param">
+    <label>Release (0–10):
+      <input id="release" type="range" min="0" max="10" step="1">
+    </label>
+    <span id="releaseVal"></span>
+  </div>
+
+  <script>
+    let audioContext;
+    let device;
+
+    async function loadRNBO() {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Load worklet
+        await audioContext.audioWorklet.addModule(RNBO.workletUrl);
+
+        // Load your exported RNBO patch
+        const response = await fetch("rasm_origin.json");
+        const patcher = await response.json();
+
+        // Create RNBO device
+        device = await RNBO.createDevice({ context: audioContext, patcher });
+
+        // Connect to output
+        device.node.connect(audioContext.destination);
+
+        setupUI();
+
+        document.getElementById("status").textContent =
+          "Ready. Click Start Audio.";
+      } catch (err) {
+        document.getElementById("status").textContent = "Error: " + err;
+      }
+    }
+
+    function setupUI() {
+      const params = device.parametersById;
+
+      function bindSlider(name, elementId, displayId) {
+        const el = document.getElementById(elementId);
+        const disp = document.getElementById(displayId);
+        const param = params.get(name);
+
+        // RNBO の初期値を UIへ反映
+        el.value = param.value;
+        disp.textContent = param.value;
+
+        // UI → RNBO
+        el.addEventListener("input", () => {
+          param.value = parseFloat(el.value);
+          disp.textContent = el.value;
+        });
+      }
+
+      bindSlider("volume", "volume", "volumeVal");
+      bindSlider("sensitivity", "sensitivity", "sensitivityVal");
+      bindSlider("responsiveness", "responsiveness", "responsivenessVal");
+      bindSlider("dynamics", "dynamics", "dynamicsVal");
+      bindSlider("release", "release", "releaseVal");
+    }
+
+    document.getElementById("startButton").addEventListener("click", async () => {
+      if (!audioContext) await loadRNBO();
+      if (audioContext.state === "suspended") await audioContext.resume();
+      document.getElementById("status").textContent = "Audio running.";
+    });
+  </script>
+
 </body>
 </html>
