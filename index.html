@@ -71,34 +71,37 @@
       try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-        // Load RNBO Worklet
+        // Load worklet module
         await audioContext.audioWorklet.addModule(RNBO.workletUrl);
 
-        // Load your exported RNBO patch
+        // Load RNBO patch JSON
         const response = await fetch("rasm_origin.json");
         const patcher = await response.json();
 
         // Create RNBO device
         device = await RNBO.createDevice({ context: audioContext, patcher });
 
-        // Output to speakers
+        // Connect RNBO output → speakers
         device.node.connect(audioContext.destination);
 
-        // Setup UI sliders
+        // Setup UI with correct initial values
         setupUI();
 
-        // 🔥 Connect microphone to RNBO
+        // Connect microphone
         await connectMic();
 
         document.getElementById("status").textContent =
           "Ready. Click Start Audio.";
+
       } catch (err) {
         console.error(err);
         document.getElementById("status").textContent = "Error: " + err;
       }
     }
 
-    // --- UI BINDING ---
+    /* -----------------------------
+       PARAMETER UI SYNC (完璧に同期)
+    ------------------------------*/
     function setupUI() {
       const params = device.parametersById;
 
@@ -107,14 +110,20 @@
         const disp = document.getElementById(displayId);
         const param = params.get(name);
 
-        // RNBO -> UI initial sync
-        el.value = param.value;
-        disp.textContent = param.value;
+        // RNBO の初期値を確実に取得
+        const initial = ("initialValue" in param)
+            ? param.initialValue
+            : param.value;
 
-        // UI -> RNBO sync
+        // UI ← RNBO 初期反映
+        el.value = initial;
+        disp.textContent = initial;
+
+        // UI → RNBO
         el.addEventListener("input", () => {
-          param.value = parseFloat(el.value);
-          disp.textContent = el.value;
+          const v = parseFloat(el.value);
+          param.value = v;
+          disp.textContent = v;
         });
       }
 
@@ -125,30 +134,37 @@
       bindSlider("release", "release", "releaseVal");
     }
 
-    // --- MICROPHONE → RNBO in~ 接続 ---
+    /* -----------------------------
+        MICROPHONE → RNBO in~
+    ------------------------------*/
     async function connectMic() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
+        // Mic audio → Web Audio node
         const micSource = audioContext.createMediaStreamSource(stream);
 
-        // RNBO デバイスの input へ接続（in~ 0 に相当）
+        // Connect to RNBO input (in~ 0)
         micSource.connect(device.node);
 
-        console.log("Microphone successfully connected to RNBO.");
+        console.log("Microphone connected.");
       } catch (err) {
-        console.error("Microphone error:", err);
+        console.error("Mic error:", err);
         document.getElementById("status").textContent =
           "Mic permission denied or unavailable.";
       }
     }
 
-    // Start button handler
+    /* -----------------------------
+          START BUTTON HANDLER
+    ------------------------------*/
     document.getElementById("startButton").addEventListener("click", async () => {
       if (!audioContext) await loadRNBO();
       if (audioContext.state === "suspended") await audioContext.resume();
+
       document.getElementById("status").textContent = "Audio running.";
     });
+
   </script>
 
 </body>
