@@ -8,20 +8,31 @@
   <!-- RNBO Web Engine -->
   <script src="https://cdn.cycling74.com/rnbo/rnbo.min.js"></script>
 
+  <!-- キャッシュ回避（index.htmlを毎回確実に更新） -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
   <style>
     body {
       font-family: system-ui, sans-serif;
       padding: 20px;
     }
-    h1 { margin-bottom: 10px; }
+    h1 { margin-bottom: 5px; }
     .param { margin: 12px 0; }
     input[type="range"] { width: 280px; }
+    #build {
+      color: gray;
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 
 <body>
 
   <h1>RASM Web Demo</h1>
+  <div id="build"></div>
 
   <button id="startButton">Start Audio</button>
   <p id="status">Loading…</p>
@@ -66,28 +77,33 @@
   <script>
     let audioContext;
     let device;
+    let patcherData;
+
+    // Build ID 表示（更新確認用）
+    document.getElementById("build").textContent =
+      "Build ID: " + Math.random().toString(36).slice(2, 8);
 
     async function loadRNBO() {
       try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-        // Load worklet module
+        // Worklet 読み込み
         await audioContext.audioWorklet.addModule(RNBO.workletUrl);
 
-        // Load RNBO patch JSON
-        const response = await fetch("rasm_origin.json");
-        const patcher = await response.json();
+        // JSON 読み込み（キャッシュ対策で ?v= 付加）
+        const response = await fetch("rasm_origin.json?v=" + Date.now());
+        patcherData = await response.json();
 
-        // Create RNBO device
-        device = await RNBO.createDevice({ context: audioContext, patcher });
+        // RNBO デバイス生成
+        device = await RNBO.createDevice({ context: audioContext, patcher: patcherData });
 
-        // Connect RNBO output → speakers
+        // 出力をスピーカーへ
         device.node.connect(audioContext.destination);
 
-        // Setup UI with correct initial values
+        // UI 初期化（初期値を JSON から正確に読み取る）
         setupUI();
 
-        // Connect microphone
+        // マイク接続
         await connectMic();
 
         document.getElementById("status").textContent =
@@ -99,25 +115,31 @@
       }
     }
 
-    /* -----------------------------
-       PARAMETER UI SYNC (完璧に同期)
-    ------------------------------*/
+    /* -------------------------------------
+        PARAMETER UI SYNC (初期値完全一致)
+    --------------------------------------*/
     function setupUI() {
       const params = device.parametersById;
 
       function bindSlider(name, elementId, displayId) {
         const el = document.getElementById(elementId);
         const disp = document.getElementById(displayId);
+
+        // JSON の parameters[] から該当 ID を検索
+        const paramInfo = patcherData.parameters.find(p => p.id === name);
+
+        // JSON 内の初期値（なければ 0）
+        const initial = paramInfo?.initialValue ?? 0;
+
+        // 実際の RNBO パラメータ
         const param = params.get(name);
 
-        // RNBO の初期値を確実に取得
-        const initial = ("initialValue" in param)
-            ? param.initialValue
-            : param.value;
-
-        // UI ← RNBO 初期反映
+        // UI ← 初期値
         el.value = initial;
         disp.textContent = initial;
+
+        // RNBO ← 初期値
+        param.value = initial;
 
         // UI → RNBO
         el.addEventListener("input", () => {
@@ -134,17 +156,15 @@
       bindSlider("release", "release", "releaseVal");
     }
 
-    /* -----------------------------
-        MICROPHONE → RNBO in~
-    ------------------------------*/
+    /* -------------------------------------
+          MICROPHONE → RNBO in~
+    --------------------------------------*/
     async function connectMic() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-        // Mic audio → Web Audio node
         const micSource = audioContext.createMediaStreamSource(stream);
 
-        // Connect to RNBO input (in~ 0)
+        // マイク → RNBO の in~(0) へ接続
         micSource.connect(device.node);
 
         console.log("Microphone connected.");
@@ -155,9 +175,9 @@
       }
     }
 
-    /* -----------------------------
-          START BUTTON HANDLER
-    ------------------------------*/
+    /* -------------------------------------
+              START BUTTON
+    --------------------------------------*/
     document.getElementById("startButton").addEventListener("click", async () => {
       if (!audioContext) await loadRNBO();
       if (audioContext.state === "suspended") await audioContext.resume();
